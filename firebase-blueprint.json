@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Registered learner profiles and metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "age": { "type": "number" },
+        "grade": { "type": "number" },
+        "school": { "type": "string" },
+        "phone": { "type": "string" },
+        "photoFileName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    }
+  }
+}
