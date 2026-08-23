@@ -11,6 +11,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
 import { ensureUserInFirestore } from "./lib/userService";
 import { Login } from "./components/Login";
+import { LearnAdmLanding } from "./components/LearnAdmLanding";
 import { LearnerOnboarding } from "./components/LearnerOnboarding";
 import { NextReadLogo } from "./components/NextReadLogo";
 import { 
@@ -39,6 +40,7 @@ export default function App() {
   const [showProfileEdit, setShowProfileEdit] = useState(false);
 
   // Navigation / Router view state
+  const [showLanding, setShowLanding] = useState(true);
   const [view, setView] = useState<"dashboard" | "explore" | "study" | "quiz" | "daily">("dashboard");
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
@@ -318,223 +320,112 @@ export default function App() {
     });
   };
 
+  const handleUpdateProfile = async (updatedData: any) => {
+    if (currentUser) {
+      const { updateUserProfileInFirestore } = await import("./lib/userService");
+      await updateUserProfileInFirestore(currentUser.uid, updatedData);
+      setLearnerProfile((prev: any) => ({ ...prev, ...updatedData }));
+    }
+  };
+
   if (isAuthChecking || isProfileChecking) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#EEF3F8] flex flex-col items-center justify-center p-6 font-sans">
         <div className="text-center space-y-4">
-          <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-          <p className="text-xs text-gray-400 font-semibold tracking-wider uppercase">Connecting to Firestore & Loading Profile...</p>
+          <div className="w-10 h-10 border-4 border-[#1D2B4F] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-[#4B5875] font-semibold tracking-wider uppercase">Loading Learn Adm...</p>
         </div>
       </div>
     );
   }
 
   if (!currentUser) {
+    if (showLanding) {
+      return (
+        <LearnAdmLanding 
+          onGetStarted={() => setShowLanding(false)} 
+        />
+      );
+    }
+
     return (
       <Login 
         onLoginSuccess={(user) => {
           setCurrentUser(user);
         }}
-      />
-    );
-  }
-
-  // If learner profile has not been completed yet, or if user explicitly wants to edit/view profile
-  if (!learnerProfile || showProfileEdit) {
-    return (
-      <LearnerOnboarding
-        user={currentUser}
-        initialData={learnerProfile}
-        isModalMode={showProfileEdit}
-        onClose={() => setShowProfileEdit(false)}
-        onAccountDeleted={() => handleSignOut()}
-        onComplete={(profileData) => {
-          setLearnerProfile(profileData);
-          setShowProfileEdit(false);
-        }}
+        onBackToLanding={() => setShowLanding(true)}
       />
     );
   }
 
   return (
-    <div className="bg-white min-h-screen text-slate-950 font-sans flex flex-col justify-between selection:bg-indigo-100 selection:text-indigo-900">
-      
-      {/* Dynamic Header Navbar */}
-      <header className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          
-          {/* Logo Brand */}
-          <div 
-            onClick={() => setView("dashboard")}
-            className="flex items-center gap-2.5 cursor-pointer group"
-          >
-            <NextReadLogo size="sm" className="scale-75 -ml-3" />
-            <div>
-              <span className="font-black text-gray-950 tracking-tight text-base leading-none block">
-                learnadm
-              </span>
-              <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider leading-none mt-0.5 block">
-                CBE Learning
-              </span>
-            </div>
-          </div>
+    <div className="min-h-screen selection:bg-[#FFD43B]/30">
+      {view === "dashboard" && (
+        <Dashboard
+          progress={progress}
+          subjects={subjects}
+          currentUser={currentUser}
+          learnerProfile={learnerProfile}
+          onUpdateProfile={handleUpdateProfile}
+          onSignOut={handleSignOut}
+          onSelectTopic={(subject, topicId) => {
+            setSelectedSubject(subject);
+            setSelectedTopicId(topicId);
+            setView("study");
+          }}
+          onSelectQuiz={(subject, topicId) => {
+            setSelectedSubject(subject);
+            setSelectedTopicId(topicId);
+            setView("quiz");
+          }}
+          selectedGrade={selectedGrade}
+        />
+      )}
 
-          {/* Center Navigation Links */}
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
-            <button
-              onClick={() => setView("dashboard")}
-              className={`py-5 transition-all cursor-pointer border-b-2 ${
-                view === "dashboard" 
-                  ? "border-indigo-600 text-indigo-600 font-semibold" 
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              }`}
-            >
-              Dashboard
-            </button>
-          </nav>
-
-          {/* Right Streak / Actions */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-gray-50 rounded-lg border border-gray-100 text-gray-950 font-semibold text-xs" title="Your daily study streak">
-              <Flame className="w-3.5 h-3.5 text-orange-500 fill-orange-500" />
-              <span>{progress.streak} Day Streak</span>
-            </div>
-
-            {/* User Profile Info & Logout */}
-            {currentUser && (
-              <div className="flex items-center gap-3 border-l border-gray-100 pl-4 ml-1.5" id="user-header-profile">
-                <div className="flex flex-col items-end hidden sm:flex">
-                  <span className="text-xs font-bold text-gray-900 leading-none">
-                    {learnerProfile?.name || currentUser.displayName || currentUser.email?.split("@")[0] || "Learner"}
-                  </span>
-                  <span className="text-[9px] text-indigo-600 font-bold uppercase tracking-wider mt-1 block">
-                    {learnerProfile?.grade || "Learner"} • {learnerProfile?.chosedSubject || "CBE"}
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => setShowProfileEdit(true)}
-                  className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs shrink-0 hover:bg-indigo-100 transition-colors cursor-pointer"
-                  title="View / Edit Firestore Learner Profile"
-                  id="edit-profile-btn"
-                >
-                  <UserIcon className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={handleSignOut}
-                  className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                  title="Sign Out of App"
-                  id="header-signout-btn"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+      {view === "study" && selectedSubject && selectedTopicId && (
+        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+          <div className="max-w-5xl mx-auto">
+            <StudyRoom
+              subject={selectedSubject}
+              topicId={selectedTopicId}
+              progress={progress}
+              onBack={() => setView("dashboard")}
+              onMarkComplete={handleMarkComplete}
+              onStartQuiz={(subject, topicId) => {
+                setSelectedSubject(subject);
+                setSelectedTopicId(topicId);
+                setView("quiz");
+              }}
+            />
           </div>
         </div>
-      </header>
+      )}
 
-      {/* Main Body Content stage */}
-      <main className="flex-1 bg-gray-50/50">
-        <div className="max-w-7xl w-full mx-auto px-6 py-8">
-        
-        {view === "dashboard" && (
-          <Dashboard
-            progress={progress}
-            subjects={subjects}
-            onNavigate={(targetView) => setView(targetView)}
-            onSelectTopic={(subject, topicId) => {
-              setSelectedSubject(subject);
-              setSelectedTopicId(topicId);
-              setView("study");
-            }}
-            onSelectQuiz={(subject, topicId) => {
-              setSelectedSubject(subject);
-              setSelectedTopicId(topicId);
-              setView("quiz");
-            }}
-            selectedGrade={selectedGrade}
-          />
-        )}
-
-        {view === "explore" && (
-          <SubjectExplorer
-            subjects={subjects}
-            progress={progress}
-            onSelectTopic={(subject, topicId) => {
-              setSelectedSubject(subject);
-              setSelectedTopicId(topicId);
-              setView("study");
-            }}
-            onSelectQuiz={(subject, topicId) => {
-              setSelectedSubject(subject);
-              setSelectedTopicId(topicId);
-              setView("quiz");
-            }}
-            onCreateCustomSubject={handleCreateCustomSubject}
-            selectedGrade={selectedGrade}
-            onSelectGrade={setSelectedGrade}
-          />
-        )}
-
-        {view === "study" && selectedSubject && selectedTopicId && (
-          <StudyRoom
-            subject={selectedSubject}
-            topicId={selectedTopicId}
-            progress={progress}
-            onBack={() => setView("explore")}
-            onMarkComplete={handleMarkComplete}
-            onStartQuiz={(subject, topicId) => {
-              setSelectedSubject(subject);
-              setSelectedTopicId(topicId);
-              setView("quiz");
-            }}
-          />
-        )}
-
-        {view === "quiz" && selectedSubject && selectedTopicId && (
-          <QuizRoom
-            subject={selectedSubject}
-            topicId={selectedTopicId}
-            onBack={() => setView("explore")}
-            onSaveScore={handleSaveScore}
-          />
-        )}
-
-        {view === "daily" && (
-          <DailyPracticeRoom
-            progress={progress}
-            onBack={() => setView("dashboard")}
-            onCompleteDaily={handleCompleteDaily}
-          />
-        )}
-        </div>
-      </main>
-
-      {/* Footer copyright */}
-      <footer className="border-t border-gray-100 bg-white py-6 text-center text-xs text-gray-400 font-medium shrink-0">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p>&copy; {new Date().getFullYear()} STUDIO. All rights reserved.</p>
-          <div className="flex gap-6 text-gray-400">
-            <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-indigo-600" /> Continuous Recall</span>
-            <span className="flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-indigo-600" /> AI Syllabus Tutor</span>
+      {view === "quiz" && selectedSubject && selectedTopicId && (
+        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+          <div className="max-w-4xl mx-auto">
+            <QuizRoom
+              subject={selectedSubject}
+              topicId={selectedTopicId}
+              onBack={() => setView("dashboard")}
+              onSaveScore={handleSaveScore}
+            />
           </div>
         </div>
-      </footer>
+      )}
 
-      {/* Mobile Sticky Tab bar navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 py-3 px-6 flex items-center justify-center z-30">
-        <button 
-          onClick={() => setView("dashboard")}
-          className={`flex flex-col items-center gap-1 text-[10px] font-semibold transition-all cursor-pointer ${
-            view === "dashboard" ? "text-indigo-600" : "text-gray-400 hover:text-gray-600"
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          <span>Dashboard</span>
-        </button>
-      </div>
+      {view === "daily" && (
+        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+          <div className="max-w-4xl mx-auto">
+            <DailyPracticeRoom
+              progress={progress}
+              onBack={() => setView("dashboard")}
+              onCompleteDaily={handleCompleteDaily}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

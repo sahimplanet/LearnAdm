@@ -1,6 +1,6 @@
 {
-  "name": "Interactive Study Companion",
-  "description": "An interactive e-learning platform specializing in the CBE (Competency-Based Education) Syllabus, helping you master key competencies through custom AI-generated subject roadmaps, interactive quizzes, and bite-sized daily practice exercises with an integrated AI tutor.",
+  "name": "Learn Adm",
+  "description": "Turn hard problems into easy steps. An interactive learning companion with step-by-step problem breakdowns, AI summaries, custom syllabus paths, and daily practice.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
