@@ -1,35 +1,36 @@
 import React, { useState, useEffect } from "react";
+import { 
+  BrowserRouter, 
+  Routes, 
+  Route, 
+  Navigate, 
+  useNavigate, 
+  useParams, 
+  useLocation,
+  Link
+} from "react-router-dom";
 import { UserProgress, Subject, Topic } from "./types";
 import { DEFAULT_SUBJECTS } from "./data/defaultSubjects";
 import { Dashboard } from "./components/Dashboard";
-import { SubjectExplorer } from "./components/SubjectExplorer";
 import { StudyRoom } from "./components/StudyRoom";
 import { QuizRoom } from "./components/QuizRoom";
 import { DailyPracticeRoom } from "./components/DailyPracticeRoom";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "./lib/firebase";
-import { ensureUserInFirestore } from "./lib/userService";
 import { Login } from "./components/Login";
 import { LearnAdmLanding } from "./components/LearnAdmLanding";
-import { LearnerOnboarding } from "./components/LearnerOnboarding";
-import { NextReadLogo } from "./components/NextReadLogo";
-import { 
-  Home, 
-  BookOpen, 
-  CalendarDays, 
-  Flame, 
-  GraduationCap, 
-  Award,
-  Zap,
-  Info,
-  Loader2,
-  LogOut,
-  User as UserIcon,
-  Settings
-} from "lucide-react";
+import { ConfirmPassword } from "./components/ConfirmPassword";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "./lib/firebase";
+import { ensureUserInFirestore } from "./lib/userService";
 
 export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
+}
+
+function AppRoutes() {
   // Authentication states
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
@@ -37,47 +38,9 @@ export default function App() {
   // Learner Profile state from Firestore
   const [learnerProfile, setLearnerProfile] = useState<any | null>(null);
   const [isProfileChecking, setIsProfileChecking] = useState(false);
-  const [showProfileEdit, setShowProfileEdit] = useState(false);
 
-  // Navigation / Router view state
-  const [showLanding, setShowLanding] = useState(true);
-  const [view, setView] = useState<"dashboard" | "explore" | "study" | "quiz" | "daily">("dashboard");
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        setIsProfileChecking(true);
-        let profileFound = null;
-
-        try {
-          profileFound = await ensureUserInFirestore(user);
-        } catch (err: any) {
-          console.warn("Firestore user sync notice:", err?.message || err);
-        }
-
-        setLearnerProfile(profileFound);
-        setIsProfileChecking(false);
-      } else {
-        setLearnerProfile(null);
-      }
-      setIsAuthChecking(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      setLearnerProfile(null);
-      setShowProfileEdit(false);
-      setView("dashboard");
-    } catch (e) {
-      console.error("Error signing out:", e);
-    }
-  };
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Active Grade selection state (Grade 1 to Grade 9)
   const [selectedGrade, setSelectedGrade] = useState<number>(() => {
@@ -91,8 +54,6 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // If they have less than 50 subjects, it's the old database.
-        // Force-load all DEFAULT_SUBJECTS and preserve any custom subjects they made.
         if (parsed.length >= 50) {
           return parsed;
         }
@@ -104,10 +65,6 @@ export default function App() {
     }
     return DEFAULT_SUBJECTS;
   });
-
-  useEffect(() => {
-    localStorage.setItem("study_selected_grade", String(selectedGrade));
-  }, [selectedGrade]);
 
   // User Statistics & Learning Journey Progress State
   const [progress, setProgress] = useState<UserProgress>(() => {
@@ -130,7 +87,34 @@ export default function App() {
     };
   });
 
-  // Persist State to Local Storage on updates
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        setIsProfileChecking(true);
+        let profileFound = null;
+        try {
+          profileFound = await ensureUserInFirestore(user);
+        } catch (err: any) {
+          console.warn("Firestore user sync notice:", err?.message || err);
+        }
+        setLearnerProfile(profileFound);
+        setIsProfileChecking(false);
+      } else {
+        setLearnerProfile(null);
+      }
+      setIsAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Save selected grade
+  useEffect(() => {
+    localStorage.setItem("study_selected_grade", String(selectedGrade));
+  }, [selectedGrade]);
+
+  // Persist State to Local Storage
   useEffect(() => {
     localStorage.setItem("study_progress", JSON.stringify(progress));
   }, [progress]);
@@ -139,7 +123,7 @@ export default function App() {
     localStorage.setItem("study_subjects", JSON.stringify(subjects));
   }, [subjects]);
 
-  // Handle study streak decay checks on application startup
+  // Handle study streak decay checks on startup
   useEffect(() => {
     const todayStr = new Date().toISOString().split("T")[0];
     const lastActive = progress.lastActiveDate;
@@ -147,7 +131,6 @@ export default function App() {
     if (lastActive && lastActive !== todayStr) {
       const lastDate = new Date(lastActive);
       const todayDate = new Date(todayStr);
-      // Set hours to 0 to compare full days
       lastDate.setHours(0, 0, 0, 0);
       todayDate.setHours(0, 0, 0, 0);
       
@@ -155,7 +138,6 @@ export default function App() {
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays > 1) {
-        // Streak has expired since they missed at least a whole day!
         setProgress((prev) => ({
           ...prev,
           streak: 0
@@ -164,7 +146,17 @@ export default function App() {
     }
   }, []);
 
-  // Update streak logic and append to recent activity logs
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setLearnerProfile(null);
+      navigate("/login");
+    } catch (e) {
+      console.error("Error signing out:", e);
+    }
+  };
+
+  // Update streak logic and append to activity logs
   const updateStreakAndActivity = (
     prev: UserProgress, 
     action: "read" | "quiz" | "daily", 
@@ -174,7 +166,6 @@ export default function App() {
   ): UserProgress => {
     const todayStr = new Date().toISOString().split("T")[0];
     const lastActive = prev.lastActiveDate;
-    
     let newStreak = prev.streak;
     
     if (!lastActive) {
@@ -189,14 +180,11 @@ export default function App() {
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays === 1) {
-        // Perfect habit loop, increment by 1
         newStreak = prev.streak + 1;
       } else if (diffDays > 1) {
-        // Reset streak to 1 today
         newStreak = 1;
       }
     }
-    // If lastActive === todayStr, streak remains same, avoiding multiple increments on same day
 
     const newActivity = {
       id: `act-${Date.now()}`,
@@ -243,7 +231,6 @@ export default function App() {
         [topicId]: Math.max(prevScore, score)
       };
 
-      // Auto-mark completed if they scored on a quiz!
       const updatedCompleted = prev.completedTopics.includes(topicId)
         ? prev.completedTopics
         : [...prev.completedTopics, topicId];
@@ -261,7 +248,6 @@ export default function App() {
         topicName
       );
     });
-    setView("explore");
   };
 
   const handleCompleteDaily = (dateStr: string) => {
@@ -280,43 +266,6 @@ export default function App() {
         "Daily Practice",
         "Brain Spark"
       );
-    });
-  };
-
-  // Generates custom syllabus course from Gemini
-  const handleCreateCustomSubject = async (subjectName: string) => {
-    const response = await fetch("/api/ai/custom-subject", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: subjectName, grade: selectedGrade })
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || "Tutor server was unable to formulate curriculum. Try again.");
-    }
-
-    const newSubject = await response.json();
-    newSubject.grade = selectedGrade; // Stamp the current active grade
-    setSubjects((prev) => {
-      // Filter out duplicates if same name exists
-      const filtered = prev.filter((s) => s.name.toLowerCase() !== newSubject.name.toLowerCase());
-      return [...filtered, newSubject];
-    });
-
-    setProgress((prev) => {
-      const newActivity = {
-        id: `act-${Date.now()}`,
-        date: new Date().toISOString(),
-        action: "read" as const,
-        subjectName: newSubject.name,
-        topicName: "Syllabus Roadmap",
-        details: `Created a brand-new custom syllabus path: "${newSubject.name}"`
-      };
-      return {
-        ...prev,
-        activities: [newActivity, ...prev.activities]
-      };
     });
   };
 
@@ -339,93 +288,319 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
-    if (showLanding) {
-      return (
-        <LearnAdmLanding 
-          onGetStarted={() => setShowLanding(false)} 
-        />
-      );
-    }
-
-    return (
-      <Login 
-        onLoginSuccess={(user) => {
-          setCurrentUser(user);
-        }}
-        onBackToLanding={() => setShowLanding(true)}
+  return (
+    <Routes>
+      {/* 1. LANDING PAGE (/) */}
+      <Route 
+        path="/" 
+        element={
+          <LearnAdmLanding 
+            onGetStarted={() => navigate(currentUser ? "/dashboard" : "/signup")}
+            onSignIn={() => navigate("/login")}
+            onSignUp={() => navigate("/signup")}
+          />
+        } 
       />
-    );
+
+      {/* 2. LOGIN PAGE (/login) */}
+      <Route 
+        path="/login" 
+        element={
+          currentUser ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Login 
+              initialTab="signin"
+              initialPanel="auth"
+              onLoginSuccess={() => navigate("/dashboard")}
+              onBackToLanding={() => navigate("/")}
+            />
+          )
+        } 
+      />
+
+      {/* 3. SIGNUP PAGE (/signup) */}
+      <Route 
+        path="/signup" 
+        element={
+          currentUser ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Login 
+              initialTab="signup"
+              initialPanel="auth"
+              onLoginSuccess={() => navigate("/dashboard")}
+              onBackToLanding={() => navigate("/")}
+            />
+          )
+        } 
+      />
+
+      {/* 4. RESET PASSWORD (/reset-password, /resetpassword, /forgot-password) */}
+      <Route 
+        path="/reset-password" 
+        element={
+          <Login 
+            initialTab="signin"
+            initialPanel="forgot"
+            onLoginSuccess={() => navigate("/dashboard")}
+            onBackToLanding={() => navigate("/login")}
+          />
+        } 
+      />
+      <Route path="/resetpassword" element={<Navigate to="/reset-password" replace />} />
+      <Route path="/forgot-password" element={<Navigate to="/reset-password" replace />} />
+
+      {/* 5. CONFIRMING PASSWORD (/confirmingpasword, /confirmingpassword, /confirm-password, /confirm-reset) */}
+      <Route path="/confirm-password" element={<ConfirmPassword />} />
+      <Route path="/confirmingpassword" element={<ConfirmPassword />} />
+      <Route path="/confirmingpasword" element={<ConfirmPassword />} />
+      <Route path="/confirm-reset" element={<ConfirmPassword />} />
+
+      {/* 6. DASHBOARD PAGE (/dashboard) */}
+      <Route 
+        path="/dashboard" 
+        element={
+          !currentUser ? (
+            <Navigate to="/login" replace />
+          ) : (
+            <Dashboard
+              progress={progress}
+              subjects={subjects}
+              currentUser={currentUser}
+              learnerProfile={learnerProfile}
+              initialView="dashboard"
+              onViewChange={(v) => {
+                if (v === "profile") navigate("/profile");
+              }}
+              onUpdateProfile={handleUpdateProfile}
+              onSignOut={handleSignOut}
+              onSelectTopic={(subject, topicId) => {
+                navigate(`/study/${subject.id}/${topicId}`);
+              }}
+              onSelectQuiz={(subject, topicId) => {
+                navigate(`/quiz/${subject.id}/${topicId}`);
+              }}
+              selectedGrade={selectedGrade}
+            />
+          )
+        } 
+      />
+
+      {/* 7. PROFILE PAGE (/profile) */}
+      <Route 
+        path="/profile" 
+        element={
+          !currentUser ? (
+            <Navigate to="/login" replace />
+          ) : (
+            <Dashboard
+              progress={progress}
+              subjects={subjects}
+              currentUser={currentUser}
+              learnerProfile={learnerProfile}
+              initialView="profile"
+              onViewChange={(v) => {
+                if (v === "dashboard") navigate("/dashboard");
+              }}
+              onUpdateProfile={handleUpdateProfile}
+              onSignOut={handleSignOut}
+              onSelectTopic={(subject, topicId) => {
+                navigate(`/study/${subject.id}/${topicId}`);
+              }}
+              onSelectQuiz={(subject, topicId) => {
+                navigate(`/quiz/${subject.id}/${topicId}`);
+              }}
+              selectedGrade={selectedGrade}
+            />
+          )
+        } 
+      />
+
+      {/* 8. STUDY PAGE (/study, /study/:subjectId/:topicId, /study/:topicId) */}
+      <Route 
+        path="/study" 
+        element={
+          <StudyRouteWrapper 
+            subjects={subjects} 
+            progress={progress} 
+            onMarkComplete={handleMarkComplete} 
+          />
+        } 
+      />
+      <Route 
+        path="/study/:subjectId/:topicId" 
+        element={
+          <StudyRouteWrapper 
+            subjects={subjects} 
+            progress={progress} 
+            onMarkComplete={handleMarkComplete} 
+          />
+        } 
+      />
+      <Route 
+        path="/study/:topicId" 
+        element={
+          <StudyRouteWrapper 
+            subjects={subjects} 
+            progress={progress} 
+            onMarkComplete={handleMarkComplete} 
+          />
+        } 
+      />
+
+      {/* 9. QUIZ PAGE (/quiz, /quiz/:subjectId/:topicId, /quiz/:topicId) */}
+      <Route 
+        path="/quiz" 
+        element={
+          <QuizRouteWrapper 
+            subjects={subjects} 
+            onSaveScore={handleSaveScore} 
+          />
+        } 
+      />
+      <Route 
+        path="/quiz/:subjectId/:topicId" 
+        element={
+          <QuizRouteWrapper 
+            subjects={subjects} 
+            onSaveScore={handleSaveScore} 
+          />
+        } 
+      />
+      <Route 
+        path="/quiz/:topicId" 
+        element={
+          <QuizRouteWrapper 
+            subjects={subjects} 
+            onSaveScore={handleSaveScore} 
+          />
+        } 
+      />
+
+      {/* 10. DAILY PRACTICE (/daily, /practice) */}
+      <Route 
+        path="/daily" 
+        element={
+          <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+            <div className="max-w-4xl mx-auto">
+              <DailyPracticeRoom
+                progress={progress}
+                onBack={() => navigate("/dashboard")}
+                onCompleteDaily={handleCompleteDaily}
+              />
+            </div>
+          </div>
+        } 
+      />
+      <Route path="/practice" element={<Navigate to="/daily" replace />} />
+
+      {/* 11. CATCH-ALL REDIRECT */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+// Wrapper for /study routes with parameter resolution
+function StudyRouteWrapper({
+  subjects,
+  progress,
+  onMarkComplete
+}: {
+  subjects: Subject[];
+  progress: UserProgress;
+  onMarkComplete: (topicId: string, subjectName: string, topicName: string) => void;
+}) {
+  const navigate = useNavigate();
+  const { subjectId, topicId } = useParams();
+
+  // Find subject and topic
+  let targetSubject: Subject | undefined;
+  let targetTopicId: string | undefined = topicId;
+
+  if (subjectId) {
+    targetSubject = subjects.find((s) => s.id === subjectId);
+  }
+
+  // If subject was not found by subjectId, search by topicId
+  if (!targetSubject && topicId) {
+    targetSubject = subjects.find((s) => s.topics.some((t) => t.id === topicId));
+  }
+
+  // Fallback to first available subject and topic if missing
+  if (!targetSubject) {
+    targetSubject = subjects[0];
+  }
+
+  if (!targetTopicId && targetSubject?.topics?.[0]) {
+    targetTopicId = targetSubject.topics[0].id;
+  } else if (!targetTopicId) {
+    targetTopicId = "topic-default";
   }
 
   return (
-    <div className="min-h-screen selection:bg-[#FFD43B]/30">
-      {view === "dashboard" && (
-        <Dashboard
+    <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <StudyRoom
+          subject={targetSubject}
+          topicId={targetTopicId}
           progress={progress}
-          subjects={subjects}
-          currentUser={currentUser}
-          learnerProfile={learnerProfile}
-          onUpdateProfile={handleUpdateProfile}
-          onSignOut={handleSignOut}
-          onSelectTopic={(subject, topicId) => {
-            setSelectedSubject(subject);
-            setSelectedTopicId(topicId);
-            setView("study");
+          onBack={() => navigate("/dashboard")}
+          onMarkComplete={onMarkComplete}
+          onStartQuiz={(subj, tId) => {
+            navigate(`/quiz/${subj.id}/${tId}`);
           }}
-          onSelectQuiz={(subject, topicId) => {
-            setSelectedSubject(subject);
-            setSelectedTopicId(topicId);
-            setView("quiz");
-          }}
-          selectedGrade={selectedGrade}
         />
-      )}
-
-      {view === "study" && selectedSubject && selectedTopicId && (
-        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
-          <div className="max-w-5xl mx-auto">
-            <StudyRoom
-              subject={selectedSubject}
-              topicId={selectedTopicId}
-              progress={progress}
-              onBack={() => setView("dashboard")}
-              onMarkComplete={handleMarkComplete}
-              onStartQuiz={(subject, topicId) => {
-                setSelectedSubject(subject);
-                setSelectedTopicId(topicId);
-                setView("quiz");
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {view === "quiz" && selectedSubject && selectedTopicId && (
-        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
-          <div className="max-w-4xl mx-auto">
-            <QuizRoom
-              subject={selectedSubject}
-              topicId={selectedTopicId}
-              onBack={() => setView("dashboard")}
-              onSaveScore={handleSaveScore}
-            />
-          </div>
-        </div>
-      )}
-
-      {view === "daily" && (
-        <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
-          <div className="max-w-4xl mx-auto">
-            <DailyPracticeRoom
-              progress={progress}
-              onBack={() => setView("dashboard")}
-              onCompleteDaily={handleCompleteDaily}
-            />
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
 
+// Wrapper for /quiz routes with parameter resolution
+function QuizRouteWrapper({
+  subjects,
+  onSaveScore
+}: {
+  subjects: Subject[];
+  onSaveScore: (topicId: string, score: number, subjectName: string, topicName: string) => void;
+}) {
+  const navigate = useNavigate();
+  const { subjectId, topicId } = useParams();
+
+  let targetSubject: Subject | undefined;
+  let targetTopicId: string | undefined = topicId;
+
+  if (subjectId) {
+    targetSubject = subjects.find((s) => s.id === subjectId);
+  }
+
+  if (!targetSubject && topicId) {
+    targetSubject = subjects.find((s) => s.topics.some((t) => t.id === topicId));
+  }
+
+  if (!targetSubject) {
+    targetSubject = subjects[0];
+  }
+
+  if (!targetTopicId && targetSubject?.topics?.[0]) {
+    targetTopicId = targetSubject.topics[0].id;
+  } else if (!targetTopicId) {
+    targetTopicId = "topic-default";
+  }
+
+  return (
+    <div className="min-h-screen bg-[#EEF3F8] p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        <QuizRoom
+          subject={targetSubject}
+          topicId={targetTopicId}
+          onBack={() => navigate("/dashboard")}
+          onSaveScore={(tId, score, sName, topName) => {
+            onSaveScore(tId, score, sName, topName);
+            navigate("/dashboard");
+          }}
+        />
+      </div>
+    </div>
+  );
+}

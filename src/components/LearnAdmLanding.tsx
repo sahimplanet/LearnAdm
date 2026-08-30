@@ -1,12 +1,32 @@
 import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { subscribeStudentToNewsletter } from "../lib/userService";
 
 interface LearnAdmLandingProps {
-  onGetStarted: () => void;
+  onGetStarted?: () => void;
+  onSignIn?: () => void;
+  onSignUp?: () => void;
 }
 
-export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }) => {
+export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted, onSignIn, onSignUp }) => {
+  const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState<number | null>(null);
+
+  const handleStart = () => {
+    if (onGetStarted) {
+      onGetStarted();
+    } else {
+      navigate("/signup");
+    }
+  };
+
+  const handleGoSignIn = () => {
+    if (onSignIn) {
+      onSignIn();
+    } else {
+      navigate("/login");
+    }
+  };
 
   // Student Newsletter State
   const [newsletterEmail, setNewsletterEmail] = useState<string>("");
@@ -892,13 +912,23 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           <a href="#templates" onClick={(e) => scrollToSection(e, "templates")}>Examples</a>
           <a href="#newsletter" onClick={(e) => scrollToSection(e, "newsletter")}>Newsletter</a>
         </div>
-        <button
-          onClick={onGetStarted}
-          className="btn btn-primary btn-sm"
-          id="landing-try-free-btn"
-        >
-          Get Started
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            onClick={handleGoSignIn}
+            className="btn btn-ghost btn-sm"
+            id="landing-signin-btn"
+            style={{ fontWeight: 600, color: "var(--ink)", border: "1px solid var(--card-border)", background: "white" }}
+          >
+            Sign In
+          </button>
+          <button
+            onClick={handleStart}
+            className="btn btn-primary btn-sm"
+            id="landing-try-free-btn"
+          >
+            Get Started
+          </button>
+        </div>
       </nav>
 
       {/* Hero Header */}
@@ -912,7 +942,7 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
         </p>
         <div className="hero-ctas">
           <button
-            onClick={onGetStarted}
+            onClick={handleStart}
             className="btn btn-primary"
             id="landing-get-started-btn"
           >
@@ -1215,7 +1245,7 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           <h2>Ready to solve your first problem?</h2>
           <p>Pick a subject, follow the path, and see how each step connects to the next.</p>
           <button
-            onClick={onGetStarted}
+            onClick={handleStart}
             className="btn btn-primary"
             id="landing-cta-start-btn"
           >

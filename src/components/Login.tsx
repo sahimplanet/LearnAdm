@@ -14,14 +14,33 @@ import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 interface LoginProps {
   onLoginSuccess: (user: any) => void;
   onBackToLanding?: () => void;
+  initialTab?: TabMode;
+  initialPanel?: PanelMode;
 }
 
 type TabMode = "signin" | "signup";
-type PanelMode = "auth" | "verify" | "forgot" | "success";
+type PanelMode = "auth" | "verify" | "forgot" | "forgot-success" | "success";
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding }) => {
-  const [tab, setTab] = useState<TabMode>("signin");
-  const [panel, setPanel] = useState<PanelMode>("auth");
+export const Login: React.FC<LoginProps> = ({ 
+  onLoginSuccess, 
+  onBackToLanding,
+  initialTab = "signin",
+  initialPanel = "auth"
+}) => {
+  const [tab, setTab] = useState<TabMode>(initialTab);
+  const [panel, setPanel] = useState<PanelMode>(initialPanel);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (initialPanel) {
+      setPanel(initialPanel);
+    }
+  }, [initialPanel]);
 
   // Sign In fields
   const [signinEmail, setSigninEmail] = useState("");
@@ -39,6 +58,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding })
 
   // Forgot password
   const [forgotEmail, setForgotEmail] = useState("");
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
 
   // OTP digits
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -62,7 +82,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding })
   // Resend countdown effect
   useEffect(() => {
     let interval: any;
-    if (panel === "verify" && !canResend && resendTimer > 0) {
+    if ((panel === "verify" || panel === "forgot-success") && !canResend && resendTimer > 0) {
       interval = setInterval(() => {
         setResendTimer((prev) => {
           if (prev <= 1) {
@@ -257,27 +277,61 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding })
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail.trim()) {
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) {
       setError("Please enter your registered email address.");
+      return;
+    }
+    if (!cleanEmail.includes("@")) {
+      setError("Please enter a valid email address.");
       return;
     }
     setError(null);
     setIsLoading(true);
 
     try {
-      await sendPasswordResetEmail(auth, forgotEmail.trim(), getActionCodeSettings());
-      setPanel("verify");
+      try {
+        await sendPasswordResetEmail(auth, cleanEmail, getActionCodeSettings());
+      } catch (settingsErr) {
+        // Fallback without actionCodeSettings if domain is not configured
+        await sendPasswordResetEmail(auth, cleanEmail);
+      }
+      setResetSuccessMsg(`We sent a password reset link to ${cleanEmail}. Check your inbox and follow the link to reset your password.`);
+      setPanel("forgot-success");
       setResendTimer(30);
       setCanResend(false);
     } catch (err: any) {
       console.error("Password reset error:", err);
       let msg = err.message;
       if (err.code === "auth/user-not-found") {
-        msg = "No account found with this email.";
+        msg = "No registered account found with this email address. Please check your spelling or sign up.";
+      } else if (err.code === "auth/invalid-email") {
+        msg = "The email address format is invalid. Please enter a valid email.";
+      } else if (err.code === "auth/too-many-requests") {
+        msg = "Too many reset attempts. Please wait a few minutes before trying again.";
       }
       setError(msg);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendPasswordReset = async () => {
+    if (!canResend || !forgotEmail.trim()) return;
+    setCanResend(false);
+    setResendTimer(30);
+    setError(null);
+
+    try {
+      try {
+        await sendPasswordResetEmail(auth, forgotEmail.trim(), getActionCodeSettings());
+      } catch (settingsErr) {
+        await sendPasswordResetEmail(auth, forgotEmail.trim());
+      }
+      setResetSuccessMsg(`New reset link sent to ${forgotEmail.trim()}!`);
+    } catch (err: any) {
+      console.error("Error resending password reset:", err);
+      setError("Could not resend email. Please wait a moment and try again.");
     }
   };
 
@@ -1091,24 +1145,51 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding })
           {/* ============================================================ */}
           {panel === "forgot" && (
             <div className="auth-panel" id="panelForgot">
-              <h2 className="verify-title" style={{ marginTop: "4px" }}>Reset your password</h2>
-              <p className="verify-sub">Enter your email and we'll send you an official reset link.</p>
+              <div style={{ textAlign: "center", marginBottom: "14px" }}>
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "12px",
+                    background: "var(--bg)",
+                    border: "1.5px solid var(--card-border)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "22px",
+                    color: "var(--ink)"
+                  }}
+                >
+                  🔑
+                </div>
+              </div>
 
-              <form className="auth-form" onSubmit={handleForgotPasswordSubmit}>
+              <h2 className="verify-title" style={{ marginTop: "2px" }}>Reset your password</h2>
+              <p className="verify-sub">
+                Enter your account email and we'll send you an official password reset link.
+              </p>
+
+              <form className="auth-form" onSubmit={handleForgotPasswordSubmit} id="forgotPasswordForm">
                 <div className="field">
                   <label>Email address</label>
                   <input
                     type="email"
                     placeholder="you@example.com"
                     required
+                    autoFocus
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     id="forgot-email-input"
                   />
                 </div>
-                <button type="submit" className="btn-primary" disabled={isLoading} id="forgot-submit-btn">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isLoading}
+                  id="forgot-submit-btn"
+                >
                   {isLoading ? <Loader2 style={{ width: "16px", height: "16px" }} className="animate-spin" /> : null}
-                  <span>Send reset link</span>
+                  <span>Send recovery email</span>
                 </button>
               </form>
 
@@ -1123,6 +1204,73 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onBackToLanding })
                 >
                   ← Back to sign in
                 </button>
+              </p>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* PANEL 2B: FORGOT PASSWORD - EMAIL SENT SUCCESS               */}
+          {/* ============================================================ */}
+          {panel === "forgot-success" && (
+            <div className="auth-panel" id="panelForgotSuccess">
+              <div className="verify-icon">
+                <div className="ring"></div>
+                <div className="ring"></div>
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="2" y="4" width="20" height="16" rx="3" stroke="#1D2B4F" strokeWidth="1.6"/>
+                  <path d="M3 6l9 6 9-6" stroke="#2F9E44" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+
+              <h2 className="verify-title">Check your inbox</h2>
+              <p className="verify-sub">
+                We've sent a password reset link to <b>{forgotEmail}</b>. Click the link in the email to set a new password.
+              </p>
+
+              {resetSuccessMsg && (
+                <div
+                  style={{
+                    background: "#E8F5E9",
+                    color: "#2E7D32",
+                    border: "1px solid #C8E6C9",
+                    borderRadius: "8px",
+                    padding: "10px 14px",
+                    fontSize: "12.5px",
+                    lineHeight: "1.4",
+                    marginBottom: "16px",
+                    textAlign: "center"
+                  }}
+                >
+                  {resetSuccessMsg}
+                </div>
+              )}
+
+              <p className="resend-line" id="forgotResendLine">
+                {!canResend ? (
+                  <>Resend link in <span>{resendTimer}</span>s</>
+                ) : (
+                  <button type="button" onClick={handleResendPasswordReset} id="resend-forgot-btn">
+                    Resend reset email
+                  </button>
+                )}
+              </p>
+
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setSigninEmail(forgotEmail);
+                  setTab("signin");
+                  setPanel("auth");
+                  setError(null);
+                }}
+                id="back-to-signin-after-forgot-btn"
+              >
+                Back to sign in
+              </button>
+
+              <p style={{ fontSize: "12px", color: "var(--ink-faint)", textAlign: "center", marginTop: "14px", lineHeight: "1.4" }}>
+                Didn't get the email? Check your spam folder or try again with your registered address.
               </p>
             </div>
           )}

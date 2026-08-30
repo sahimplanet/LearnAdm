@@ -12,6 +12,8 @@ interface DashboardProps {
   onSelectTopic: (subject: Subject, topicId: string) => void;
   onSelectQuiz?: (subject: Subject, topicId: string) => void;
   selectedGrade?: number;
+  initialView?: "dashboard" | "profile";
+  onViewChange?: (view: "dashboard" | "profile") => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -23,10 +25,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSignOut,
   onSelectTopic,
   onSelectQuiz,
-  selectedGrade = 7
+  selectedGrade = 7,
+  initialView = "dashboard",
+  onViewChange
 }) => {
   // Navigation view inside Dashboard shell: "dashboard" | "profile"
-  const [activeView, setActiveView] = useState<"dashboard" | "profile">("dashboard");
+  const [activeView, setActiveView] = useState<"dashboard" | "profile">(initialView);
+
+  useEffect(() => {
+    if (initialView) {
+      setActiveView(initialView);
+    }
+  }, [initialView]);
+
+  const handleSwitchView = (view: "dashboard" | "profile") => {
+    setActiveView(view);
+    if (onViewChange) {
+      onViewChange(view);
+    }
+  };
 
   // Selected active subject for Today's Card focus
   const [selectedSubjectIndex, setSelectedSubjectIndex] = useState<number>(0);
@@ -1211,7 +1228,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <button
             type="button"
             className={`nav-item ${activeView === "dashboard" ? "active" : ""}`}
-            onClick={() => setActiveView("dashboard")}
+            onClick={() => handleSwitchView("dashboard")}
             id="nav-dashboard-btn"
           >
             <span className="ic">⌂</span>
@@ -1221,7 +1238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <button
             type="button"
             className={`nav-item ${activeView === "profile" ? "active" : ""}`}
-            onClick={() => setActiveView("profile")}
+            onClick={() => handleSwitchView("profile")}
             id="nav-profile-btn"
           >
             <span className="ic">☺</span>
