@@ -158,6 +158,49 @@ export async function updateUserProfileInFirestore(
 }
 
 /**
+ * Subscribes a student's email to the Learn Adm newsletter in Firestore and local storage.
+ */
+export async function subscribeStudentToNewsletter(
+  email: string,
+  extraData: { grade?: string; interest?: string } = {}
+): Promise<{ success: boolean; message: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    throw new Error("Please enter a valid email address.");
+  }
+
+  const subscriberDocId = cleanEmail.replace(/[^a-zA-Z0-9]/g, "_");
+  const payload = {
+    email: cleanEmail,
+    role: "student",
+    grade: extraData.grade || "All Grades (7-12)",
+    interest: extraData.interest || "Study Tips & Step-by-Step Solutions",
+    subscribedAt: new Date().toISOString(),
+    source: "landing_page_newsletter"
+  };
+
+  try {
+    const subscriberRef = doc(db, "newsletter_subscribers", subscriberDocId);
+    await setDoc(subscriberRef, payload, { merge: true });
+  } catch (err) {
+    console.warn("Firestore newsletter subscription sync notice:", err);
+  }
+
+  // Also cache locally
+  try {
+    const existing = JSON.parse(localStorage.getItem("learnadm_newsletter_subscribers") || "[]");
+    if (!existing.includes(cleanEmail)) {
+      existing.push(cleanEmail);
+      localStorage.setItem("learnadm_newsletter_subscribers", JSON.stringify(existing));
+    }
+  } catch (e) {
+    // ignore local storage error
+  }
+
+  return { success: true, message: "Thank you for subscribing!" };
+}
+
+/**
  * Deletes user document from Firestore /users/{{uid}}, clears local storage, and deletes Firebase auth user.
  */
 export async function deleteUserAccountFromFirestore(user: any): Promise<void> {

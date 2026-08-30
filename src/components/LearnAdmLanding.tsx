@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { subscribeStudentToNewsletter } from "../lib/userService";
 
 interface LearnAdmLandingProps {
   onGetStarted: () => void;
@@ -6,6 +7,37 @@ interface LearnAdmLandingProps {
 
 export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }) => {
   const [activeStep, setActiveStep] = useState<number | null>(null);
+
+  // Student Newsletter State
+  const [newsletterEmail, setNewsletterEmail] = useState<string>("");
+  const [newsletterGrade, setNewsletterGrade] = useState<string>("Grade 8");
+  const [newsletterStatus, setNewsletterStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [newsletterMsg, setNewsletterMsg] = useState<string>("");
+
+  const handleNewsletterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsletterEmail || !newsletterEmail.includes("@")) {
+      setNewsletterStatus("error");
+      setNewsletterMsg("Please enter a valid email address.");
+      return;
+    }
+
+    setNewsletterStatus("loading");
+    setNewsletterMsg("");
+
+    try {
+      await subscribeStudentToNewsletter(newsletterEmail, {
+        grade: newsletterGrade,
+        interest: "Weekly Step-by-Step Study Guides & CBE Exam Tips"
+      });
+      setNewsletterStatus("success");
+      setNewsletterMsg("You're subscribed! We'll send helpful study tips straight to your inbox.");
+      setNewsletterEmail("");
+    } catch (err: any) {
+      setNewsletterStatus("error");
+      setNewsletterMsg(err.message || "Failed to subscribe. Please try again.");
+    }
+  };
 
   const explanations = [
     "This is the problem we're starting with — an equation with one unknown, x.",
@@ -590,6 +622,174 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           box-shadow: 0 6px 18px rgba(255,212,59,0.35);
         }
 
+        /* STUDENT NEWSLETTER SECTION */
+        .learn-adm-root section.newsletter {
+          padding: 40px 24px 60px;
+        }
+        .learn-adm-root .newsletter-card {
+          max-width: 820px;
+          margin: 0 auto;
+          background: var(--card);
+          border: 1.5px solid var(--card-border);
+          border-radius: 20px;
+          padding: 44px 40px;
+          box-shadow: 0 4px 20px rgba(29,43,79,0.06);
+          position: relative;
+        }
+        .learn-adm-root .newsletter-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: var(--green-soft);
+          color: var(--green);
+          font-size: 12px;
+          font-weight: 700;
+          padding: 4px 12px;
+          border-radius: 20px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        }
+        .learn-adm-root .newsletter-card h2 {
+          font-size: 26px;
+          color: var(--ink);
+          margin-bottom: 8px;
+        }
+        .learn-adm-root .newsletter-card .nl-desc {
+          font-size: 14.5px;
+          color: var(--ink-soft);
+          max-width: 600px;
+          line-height: 1.5;
+          margin-bottom: 24px;
+        }
+        .learn-adm-root .grade-selector-group {
+          margin-bottom: 18px;
+        }
+        .learn-adm-root .grade-selector-label {
+          display: block;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: var(--ink-soft);
+          margin-bottom: 8px;
+        }
+        .learn-adm-root .grade-pills {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .learn-adm-root .grade-pill {
+          padding: 6px 14px;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          border: 1px solid var(--card-border);
+          background: #F8FAFC;
+          color: var(--ink-soft);
+          cursor: pointer;
+          transition: all .15s ease;
+        }
+        .learn-adm-root .grade-pill:hover {
+          border-color: var(--ink);
+          color: var(--ink);
+        }
+        .learn-adm-root .grade-pill.active {
+          background: var(--ink);
+          color: #FFFFFF;
+          border-color: var(--ink);
+        }
+        .learn-adm-root .newsletter-form {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+        .learn-adm-root .newsletter-input {
+          flex: 1;
+          padding: 13px 18px;
+          border-radius: 10px;
+          border: 1.5px solid var(--card-border);
+          background: #FFFFFF;
+          font-size: 14.5px;
+          color: var(--ink);
+          outline: none;
+          transition: border-color .2s, box-shadow .2s;
+        }
+        .learn-adm-root .newsletter-input:focus {
+          border-color: var(--ink);
+          box-shadow: 0 0 0 3px rgba(29,43,79,0.12);
+        }
+        .learn-adm-root .newsletter-btn {
+          padding: 13px 26px;
+          border-radius: 10px;
+          border: none;
+          background: var(--ink);
+          color: #FFFFFF;
+          font-weight: 700;
+          font-size: 14px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: transform .15s, background .15s, box-shadow .15s;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .learn-adm-root .newsletter-btn:hover {
+          background: #273A6B;
+          box-shadow: 0 4px 12px rgba(29,43,79,0.25);
+          transform: translateY(-1px);
+        }
+        .learn-adm-root .newsletter-btn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
+          transform: none;
+        }
+        .learn-adm-root .newsletter-privacy {
+          font-size: 12px;
+          color: var(--ink-faint);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .learn-adm-root .newsletter-perks {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 16px;
+          margin-top: 24px;
+          padding-top: 20px;
+          border-top: 1px solid var(--card-border);
+        }
+        .learn-adm-root .perk-item {
+          font-size: 12.5px;
+          color: var(--ink-soft);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .learn-adm-root .perk-item .perk-icon {
+          color: var(--green);
+          font-weight: 700;
+          font-size: 14px;
+        }
+        .learn-adm-root .newsletter-alert {
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-size: 13.5px;
+          margin-bottom: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .learn-adm-root .newsletter-alert.success {
+          background: #E8F5E9;
+          color: #2E7D32;
+          border: 1px solid #C8E6C9;
+        }
+        .learn-adm-root .newsletter-alert.error {
+          background: #FFEBEE;
+          color: #C62828;
+          border: 1px solid #FFCDD2;
+        }
+
         /* Footer */
         .learn-adm-root footer {
           padding: 30px 24px 40px;
@@ -661,6 +861,16 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           .learn-adm-root nav .nav-links {
             display: none;
           }
+          .learn-adm-root .newsletter-form {
+            flex-direction: column;
+          }
+          .learn-adm-root .newsletter-perks {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .learn-adm-root .newsletter-card {
+            padding: 30px 20px;
+          }
         }
       `}</style>
 
@@ -680,6 +890,7 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           <a href="#how" onClick={(e) => scrollToSection(e, "how")}>How it works</a>
           <a href="#subjects" onClick={(e) => scrollToSection(e, "subjects")}>Subjects</a>
           <a href="#templates" onClick={(e) => scrollToSection(e, "templates")}>Examples</a>
+          <a href="#newsletter" onClick={(e) => scrollToSection(e, "newsletter")}>Newsletter</a>
         </div>
         <button
           onClick={onGetStarted}
@@ -895,6 +1106,109 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
         </div>
       </section>
 
+      {/* Student Newsletter Subscription Section */}
+      <section className="newsletter" id="newsletter">
+        <div className="wrap">
+          <div className="newsletter-card" id="student-newsletter-box">
+            <div className="newsletter-badge">
+              <span>✉</span>
+              <span>Student Newsletter</span>
+            </div>
+            <h2>Subscribe for free weekly study guides & solved paths</h2>
+            <p className="nl-desc">
+              Get step-by-step math solutions, science breakdown sheets, and Kenyan CBE curriculum revision shortcuts sent straight to your email every week.
+            </p>
+
+            {/* Grade Selection */}
+            <div className="grade-selector-group">
+              <label className="grade-selector-label">Select your grade level:</label>
+              <div className="grade-pills">
+                {["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12", "All Grades"].map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`grade-pill ${newsletterGrade === g ? "active" : ""}`}
+                    onClick={() => setNewsletterGrade(g)}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Feedback Alerts */}
+            {newsletterStatus === "success" && (
+              <div className="newsletter-alert success" id="newsletter-success-alert">
+                <span>🎉 {newsletterMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setNewsletterStatus("idle")}
+                  style={{ background: "none", border: "none", color: "#2E7D32", cursor: "pointer", fontWeight: 700 }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {newsletterStatus === "error" && (
+              <div className="newsletter-alert error" id="newsletter-error-alert">
+                <span>⚠️ {newsletterMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setNewsletterStatus("idle")}
+                  style={{ background: "none", border: "none", color: "#C62828", cursor: "pointer", fontWeight: 700 }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Newsletter Input Form */}
+            <form className="newsletter-form" onSubmit={handleNewsletterSubmit} id="newsletter-subscription-form">
+              <input
+                type="email"
+                className="newsletter-input"
+                placeholder="Enter your student email address..."
+                value={newsletterEmail}
+                onChange={(e) => setNewsletterEmail(e.target.value)}
+                disabled={newsletterStatus === "loading"}
+                required
+                id="newsletter-email-input"
+              />
+              <button
+                type="submit"
+                className="newsletter-btn"
+                disabled={newsletterStatus === "loading"}
+                id="newsletter-submit-btn"
+              >
+                {newsletterStatus === "loading" ? "Subscribing..." : "Subscribe for free →"}
+              </button>
+            </form>
+
+            <div className="newsletter-privacy">
+              <span>🔒</span>
+              <span>Zero spam. No account required. Unsubscribe anytime with one click.</span>
+            </div>
+
+            {/* Subscriber Perks */}
+            <div className="newsletter-perks">
+              <div className="perk-item">
+                <span className="perk-icon">✓</span>
+                <span>Weekly step-by-step problem sets</span>
+              </div>
+              <div className="perk-item">
+                <span className="perk-icon">✓</span>
+                <span>CBE exam revision shortcuts</span>
+              </div>
+              <div className="perk-item">
+                <span className="perk-icon">✓</span>
+                <span>New subject module releases</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Box */}
       <section className="cta" id="cta">
         <div className="cta-box">
@@ -917,6 +1231,7 @@ export const LearnAdmLanding: React.FC<LearnAdmLandingProps> = ({ onGetStarted }
           <div className="footer-links">
             <a href="#how" onClick={(e) => scrollToSection(e, "how")}>About</a>
             <a href="#how" onClick={(e) => scrollToSection(e, "how")}>Help</a>
+            <a href="#newsletter" onClick={(e) => scrollToSection(e, "newsletter")}>Newsletter</a>
             <a href="#how" onClick={(e) => scrollToSection(e, "how")}>Privacy</a>
             <a href="#cta" onClick={(e) => scrollToSection(e, "cta")}>Contact</a>
           </div>
