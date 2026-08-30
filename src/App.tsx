@@ -18,6 +18,7 @@ import { DailyPracticeRoom } from "./components/DailyPracticeRoom";
 import { Login } from "./components/Login";
 import { LearnAdmLanding } from "./components/LearnAdmLanding";
 import { ConfirmPassword } from "./components/ConfirmPassword";
+import { VerifyEmail } from "./components/VerifyEmail";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./lib/firebase";
 import { ensureUserInFirestore } from "./lib/userService";
@@ -356,6 +357,12 @@ function AppRoutes() {
       <Route path="/confirmingpassword" element={<ConfirmPassword />} />
       <Route path="/confirmingpasword" element={<ConfirmPassword />} />
       <Route path="/confirm-reset" element={<ConfirmPassword />} />
+
+      {/* 5B. EMAIL VERIFICATION VIA RESEND (/verify-email, /confirm-email, /verifyemail) */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/confirm-email" element={<VerifyEmail />} />
+      <Route path="/verifyemail" element={<VerifyEmail />} />
+      <Route path="/confirmemail" element={<VerifyEmail />} />
 
       {/* 6. DASHBOARD PAGE (/dashboard) */}
       <Route 

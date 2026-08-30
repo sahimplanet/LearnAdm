@@ -180,10 +180,30 @@ export const Login: React.FC<LoginProps> = ({
         Location: location.trim()
       });
 
+      // Send Resend Verification Email Link
+      try {
+        const verifyRes = await fetch("/api/auth/send-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: signupEmail.trim(),
+            name: fullname.trim(),
+            uid: user.uid
+          })
+        });
+        const verifyData = await verifyRes.json();
+        if (verifyData?.verificationLink) {
+          console.log("Resend Verification Link:", verifyData.verificationLink);
+        }
+      } catch (resendErr) {
+        console.warn("Notice sending Resend verification link:", resendErr);
+      }
+
+      // Also send Firebase fallback verification if available
       try {
         await sendEmailVerification(user, getActionCodeSettings());
       } catch (mailErr) {
-        console.warn("Could not send verification email:", mailErr);
+        console.warn("Notice sending fallback Firebase verification:", mailErr);
       }
 
       setRegisteredUser(user);
@@ -266,12 +286,30 @@ export const Login: React.FC<LoginProps> = ({
     setResendTimer(30);
     setError(null);
 
+    const targetEmail = signupEmail.trim() || signinEmail.trim() || auth.currentUser?.email || "";
+
     try {
+      if (targetEmail) {
+        await fetch("/api/auth/send-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: targetEmail,
+            name: fullname.trim() || auth.currentUser?.displayName || "Learner",
+            uid: auth.currentUser?.uid || registeredUser?.uid
+          })
+        });
+      }
+
       if (auth.currentUser) {
-        await sendEmailVerification(auth.currentUser, getActionCodeSettings());
+        try {
+          await sendEmailVerification(auth.currentUser, getActionCodeSettings());
+        } catch (fbErr) {
+          // ignore
+        }
       }
     } catch (err) {
-      console.warn("Error resending email:", err);
+      console.warn("Error resending verification email:", err);
     }
   };
 

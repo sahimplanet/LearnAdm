@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { Resend } from "resend";
+import crypto from "crypto";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -25,6 +27,106 @@ function getGeminiClient(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+// Lazily initialize Resend client to prevent crashing on startup if key is missing
+let resendClient: Resend | null = null;
+
+function getResendClient(): Resend {
+  if (!resendClient) {
+    const key = process.env.RESEND_API_KEY;
+    if (!key || key === "MY_RESEND_API_KEY") {
+      throw new Error("RESEND_API_KEY environment variable is missing or placeholder. Please configure it in Settings > Secrets.");
+    }
+    resendClient = new Resend(key);
+  }
+  return resendClient;
+}
+
+// In-Memory store for Verification Tokens & HMAC token signature fallback
+const TOKEN_SECRET = process.env.RESEND_API_KEY || "learnadm-resend-verification-secret-salt-2026";
+
+interface VerificationRecord {
+  email: string;
+  uid?: string;
+  name?: string;
+  token: string;
+  expiresAt: number;
+  verified: boolean;
+  verifiedAt?: string;
+}
+
+const verificationTokens = new Map<string, VerificationRecord>();
+
+function createVerificationToken(email: string, uid?: string, name?: string): string {
+  const cleanEmail = email.trim().toLowerCase();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  const randomSalt = crypto.randomBytes(16).toString("hex");
+  const payload = `${cleanEmail}:${uid || ""}:${expiresAt}:${randomSalt}`;
+  const hmac = crypto.createHmac("sha256", TOKEN_SECRET).update(payload).digest("hex");
+  const token = Buffer.from(JSON.stringify({ email: cleanEmail, uid: uid || "", exp: expiresAt, salt: randomSalt, hmac })).toString("base64url");
+
+  verificationTokens.set(token, {
+    email: cleanEmail,
+    uid,
+    name,
+    token,
+    expiresAt,
+    verified: false,
+  });
+
+  return token;
+}
+
+function verifyTokenPayload(token: string): { valid: boolean; email?: string; uid?: string; reason?: string } {
+  if (!token) {
+    return { valid: false, reason: "No verification token provided." };
+  }
+
+  // 1. Check in-memory store
+  const record = verificationTokens.get(token);
+  if (record) {
+    if (record.expiresAt < Date.now()) {
+      return { valid: false, reason: "Verification link has expired. Please request a new one." };
+    }
+    record.verified = true;
+    record.verifiedAt = new Date().toISOString();
+    return { valid: true, email: record.email, uid: record.uid };
+  }
+
+  // 2. Stateless HMAC validation fallback
+  try {
+    const raw = Buffer.from(token, "base64url").toString("utf8");
+    const parsed = JSON.parse(raw);
+    const { email, uid, exp, salt, hmac } = parsed;
+
+    if (!email || !exp || !salt || !hmac) {
+      return { valid: false, reason: "Invalid verification token format." };
+    }
+
+    if (exp < Date.now()) {
+      return { valid: false, reason: "Verification link has expired. Please request a new one." };
+    }
+
+    const payload = `${email}:${uid || ""}:${exp}:${salt}`;
+    const expectedHmac = crypto.createHmac("sha256", TOKEN_SECRET).update(payload).digest("hex");
+
+    if (crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expectedHmac))) {
+      verificationTokens.set(token, {
+        email,
+        uid,
+        token,
+        expiresAt: exp,
+        verified: true,
+        verifiedAt: new Date().toISOString(),
+      });
+      return { valid: true, email, uid };
+    }
+
+    return { valid: false, reason: "Verification token signature mismatch." };
+  } catch (err: any) {
+    return { valid: false, reason: "Malformed or invalid verification token." };
+  }
 }
 
 async function startServer() {
@@ -75,6 +177,239 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Google Form Server POST Error]:", err?.message || err);
       res.status(500).json({ success: false, error: err?.message || "Failed to submit to Google Forms" });
+    }
+  });
+
+  // API: Check if Resend is configured
+  app.get("/api/auth/resend-config", (req, res) => {
+    const key = process.env.RESEND_API_KEY;
+    res.json({
+      configured: typeof key === "string" && key.length > 0 && key !== "MY_RESEND_API_KEY",
+    });
+  });
+
+  // API: Send Email Verification Link via Resend
+  app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+      const { email, name, uid } = req.body || {};
+      if (!email || !String(email).includes("@")) {
+        res.status(400).json({ success: false, error: "A valid email address is required." });
+        return;
+      }
+
+      const cleanEmail = String(email).trim().toLowerCase();
+      const studentName = String(name || "").trim() || "Student";
+      const token = createVerificationToken(cleanEmail, uid ? String(uid) : undefined, studentName);
+
+      // Compute Base Verification Link
+      const hostHeader = req.get("host");
+      const forwardedProto = req.get("x-forwarded-proto") || req.protocol || "https";
+      const requestOrigin = req.headers.origin || `${forwardedProto}://${hostHeader}` || process.env.APP_URL || "http://localhost:3000";
+      
+      const baseOrigin = requestOrigin.replace(/\/+$/, "");
+      const verifyLink = `${baseOrigin}/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(cleanEmail)}`;
+
+      console.log(`[Resend Verification Link for ${cleanEmail}]: ${verifyLink}`);
+
+      // Check if RESEND_API_KEY is configured
+      const key = process.env.RESEND_API_KEY;
+      if (!key || key === "MY_RESEND_API_KEY") {
+        console.warn("[Resend] RESEND_API_KEY not configured or set to placeholder. Returning verification link for preview simulation.");
+        res.json({
+          success: true,
+          delivered: false,
+          simulated: true,
+          verificationLink: verifyLink,
+          message: "Verification link generated. (Configure RESEND_API_KEY in Secrets to dispatch live emails)",
+        });
+        return;
+      }
+
+      const resend = getResendClient();
+      const fromAddress = process.env.RESEND_FROM_EMAIL || "Learn Adm <onboarding@resend.dev>";
+
+      // High-contrast, responsive branded HTML email template
+      const emailHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your email address - Learn Adm</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #EEF3F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1D2B4F;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #EEF3F8; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; background-color: #FFFFFF; border: 1px solid #D8E1EC; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(29, 43, 79, 0.06);">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background-color: #1D2B4F; padding: 28px 32px; text-align: left;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td>
+                    <div style="display: inline-block; width: 36px; height: 36px; line-height: 36px; background-color: #FFD43B; color: #1D2B4F; font-weight: 800; font-size: 18px; text-align: center; border-radius: 10px; margin-right: 10px; vertical-align: middle;">
+                      L
+                    </div>
+                    <span style="font-size: 20px; font-weight: 700; color: #FFFFFF; letter-spacing: -0.5px; vertical-align: middle;">
+                      Learn Adm
+                    </span>
+                  </td>
+                  <td align="right">
+                    <span style="background-color: rgba(255,255,255,0.12); color: #FFD43B; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;">
+                      CBE Platform
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 36px 32px 28px 32px; text-align: left;">
+              <h1 style="font-size: 22px; font-weight: 700; color: #1D2B4F; margin: 0 0 16px 0; letter-spacing: -0.4px;">
+                Verify your email address
+              </h1>
+              
+              <p style="font-size: 15px; line-height: 1.6; color: #4B5875; margin: 0 0 20px 0;">
+                Hello <strong>${studentName}</strong>,
+              </p>
+
+              <p style="font-size: 15px; line-height: 1.6; color: #4B5875; margin: 0 0 28px 0;">
+                Thank you for joining <strong>Learn Adm</strong>! To complete your registration and activate your personalized CBE curriculum dashboard, please confirm your email address by clicking the button below:
+              </p>
+
+              <!-- CTA Button -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 0 0 28px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${verifyLink}" target="_blank" style="display: inline-block; background-color: #1D2B4F; color: #FFFFFF; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(29, 43, 79, 0.25);">
+                      Verify My Email &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback Direct Link -->
+              <p style="font-size: 12px; line-height: 1.5; color: #8E99AF; margin: 0 0 16px 0;">
+                If the button above does not work, copy and paste this verification URL into your web browser:
+              </p>
+              <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; word-break: break-all; font-family: monospace; font-size: 11px; color: #1D2B4F; margin-bottom: 24px;">
+                <a href="${verifyLink}" style="color: #1D2B4F; text-decoration: underline;">${verifyLink}</a>
+              </div>
+
+              <div style="border-top: 1px solid #E2E8F0; padding-top: 18px;">
+                <p style="font-size: 12px; line-height: 1.5; color: #8E99AF; margin: 0;">
+                  This verification link will remain valid for <strong>24 hours</strong>. If you did not create an account on Learn Adm, please disregard this message.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #F8FAFC; border-top: 1px solid #D8E1EC; padding: 18px 32px; text-align: center;">
+              <p style="font-size: 11px; color: #8E99AF; margin: 0;">
+                &copy; ${new Date().getFullYear()} Learn Adm &middot; Competency-Based Education &middot; All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+      const sendResult = await resend.emails.send({
+        from: fromAddress,
+        to: [cleanEmail],
+        subject: "Verify your email address - Learn Adm",
+        html: emailHtml,
+      });
+
+      if (sendResult.error) {
+        console.error("[Resend API Error]:", sendResult.error);
+        res.json({
+          success: true,
+          delivered: false,
+          verificationLink: verifyLink,
+          message: sendResult.error.message || "Email queued with verification link fallback.",
+          errorDetails: sendResult.error,
+        });
+        return;
+      }
+
+      console.log(`[Resend Email Successfully Dispatched to ${cleanEmail}] ID:`, sendResult.data?.id);
+      res.json({
+        success: true,
+        delivered: true,
+        emailId: sendResult.data?.id,
+        verificationLink: verifyLink,
+        message: `Verification link sent successfully to ${cleanEmail}!`,
+      });
+    } catch (err: any) {
+      console.error("[Send Verification Route Error]:", err?.message || err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || "Failed to dispatch verification email.",
+      });
+    }
+  });
+
+  // API: Verify Email Token (POST)
+  app.post("/api/auth/verify-email", (req, res) => {
+    try {
+      const { token, email } = req.body || {};
+      const result = verifyTokenPayload(token);
+
+      if (!result.valid) {
+        res.status(400).json({
+          success: false,
+          error: result.reason || "Invalid or expired verification token.",
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: "Your email has been verified successfully!",
+        email: result.email || email,
+        uid: result.uid,
+        verifiedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || "Verification failed." });
+    }
+  });
+
+  // API: Verify Email Token (GET)
+  app.get("/api/auth/verify-email", (req, res) => {
+    try {
+      const token = String(req.query.token || "");
+      const result = verifyTokenPayload(token);
+
+      if (!result.valid) {
+        res.status(400).json({
+          success: false,
+          error: result.reason || "Invalid or expired verification token.",
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: "Your email has been verified successfully!",
+        email: result.email,
+        uid: result.uid,
+        verifiedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || "Verification failed." });
     }
   });
 

@@ -85,6 +85,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [feedbackText, setFeedbackText] = useState<string>("");
   const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
 
+  // Resend Email Verification State
+  const isEmailVerified = Boolean(
+    learnerProfile?.emailVerified ||
+    learnerProfile?.isVerified ||
+    currentUser?.emailVerified ||
+    localStorage.getItem("learnadm_email_verified") === "true"
+  );
+  const [resendingVerification, setResendingVerification] = useState<boolean>(false);
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
+
+  const handleSendVerificationEmail = async () => {
+    const targetEmail = editEmail || learnerProfile?.email || currentUser?.email;
+    if (!targetEmail) return;
+
+    setResendingVerification(true);
+    setVerificationFeedback(null);
+
+    try {
+      const res = await fetch("/api/auth/send-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: targetEmail,
+          name: editFullName || displayName,
+          uid: currentUser?.uid
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to dispatch verification email.");
+      }
+
+      setVerificationFeedback(`Verification link dispatched to ${targetEmail} via Resend!`);
+    } catch (err: any) {
+      setVerificationFeedback(err.message || "Could not send verification email.");
+    } finally {
+      setResendingVerification(false);
+    }
+  };
+
   // Sync profile edits when learnerProfile changes
   useEffect(() => {
     if (learnerProfile) {
@@ -1385,7 +1426,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="profile-tags">
                     <span className="chip grade">{editGrade}</span>
                     <span className="chip streak">🔥 {progress.streak || 14}-day streak</span>
+                    {isEmailVerified ? (
+                      <span className="chip" style={{ color: "#2E7D32", borderColor: "#C8E6C9", background: "#E8F5E9" }}>
+                        ✓ Email Verified (Resend)
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSendVerificationEmail}
+                        disabled={resendingVerification}
+                        className="chip"
+                        style={{
+                          color: "#C62828",
+                          borderColor: "#FFCDD2",
+                          background: "#FFEBEE",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease"
+                        }}
+                        title="Click to send verification email via Resend"
+                      >
+                        {resendingVerification ? "Sending via Resend..." : "⚠ Verify Email via Resend"}
+                      </button>
+                    )}
                   </div>
+                  {verificationFeedback && (
+                    <div style={{ marginTop: "10px", fontSize: "12px", padding: "6px 12px", borderRadius: "8px", background: "#E8F5E9", color: "#2E7D32", border: "1px solid #C8E6C9", display: "inline-block" }}>
+                      {verificationFeedback}
+                    </div>
+                  )}
                 </div>
               </div>
 
